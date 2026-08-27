@@ -1,0 +1,34 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+::selection {
+  background: #e8b04b;
+  color: #0d1b1e;
+}
+
+@keyframes pulse-live {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+.live-dot::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: #ff3b30;
+  display: inline-block;
+  margin-right: 6px;
+  animation: pulse-live 1.4s infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-dot::before {
+    animation: none;
+  }
+}
