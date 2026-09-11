@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { checkStreamHealth, isMixedContent } from '@/lib/health';
 
 export default function Player({ channel, onClose }) {
   const videoRef = useRef(null);
@@ -31,6 +32,20 @@ export default function Player({ channel, onClose }) {
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
+      }
+
+      if (isMixedContent(stream.url)) {
+        console.warn(`Flux bloqué (contenu mixte http sur https): ${stream.url}`);
+        tryNext();
+        return;
+      }
+
+      const health = await checkStreamHealth(stream.url, 4000);
+      if (cancelled) return;
+      if (!health.ok) {
+        console.warn(`Flux inaccessible (${health.error}): ${stream.url}`);
+        tryNext();
+        return;
       }
 
       const isM3u8 = stream.url.includes('.m3u8');
