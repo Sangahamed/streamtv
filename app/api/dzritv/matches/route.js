@@ -1,8 +1,10 @@
 import * as cheerio from 'cheerio';
 import { cacheGet, cacheSet } from '@/lib/cache';
+import { SPORT_SLUG_MAP } from '@/lib/dzritv-sports';
 
 const DZRI_BASE = 'https://dzritv.com';
 const FOOTBALL_DATA_KEY = process.env.FOOTBALL_DATA_API_KEY;
+
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
@@ -46,9 +48,10 @@ export async function GET(request) {
 }
 
 async function scrapeDzriTV(sport) {
+  const slug = SPORT_SLUG_MAP[sport] || sport;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000);
-  const res = await fetch(`${DZRI_BASE}/sport/${sport}`, {
+  const res = await fetch(`${DZRI_BASE}/sport/${slug}`, {
     headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'text/html', 'Accept-Language': 'fr-FR' },
     signal: controller.signal
   });
@@ -59,34 +62,62 @@ async function scrapeDzriTV(sport) {
   const $ = cheerio.load(html);
   const competitions = [];
 
-  $('h3, h4, .competition-title').each((_, compEl) => {
-    const compName = $(compEl).text().trim();
-    if (!compName || compName.length < 3) return;
-    const table = $(compEl).next('table').length ? $(compEl).next('table') : $(compEl).parent().find('table').first();
-    const matches = [];
-    table.find('tr').each((_, row) => {
-      const cells = $(row).find('td');
-      if (cells.length < 3) return;
-      const dateText = $(cells[0]).text().trim();
-      const matchText = $(cells[1]).text().trim();
-      const linkEl = $(cells[2]).find('a');
-      const matchPath = linkEl.attr('href') || '';
-      const isLive = $(cells[2]).text().toLowerCase().includes('live');
-      const teams = matchText.split(/[-–—vs]+/).map(t => t.trim()).filter(Boolean);
-      if (matchText && matchPath) {
-        matches.push({
-          id: matchPath.split('-').pop() || Math.random().toString(36).slice(2),
+  // Structure réelle (confirmée par inspection du HTML brut le 11/09/2026) :
+  // chaque bloc de sport est un <div class="sport_matches_desk"> contenant,
+  // en enfants directs : le titre du sport, un en-tête de colonnes
+  // (.football_desk.desc_title_wrapper), puis une alternance de
+  // <div class="league">Nom de la compétition</div> (répété seulement quand
+  // la compétition change) et <div class="football_desk desc_item"><a
+  // href="/match/...-<id>">...</a></div> pour chaque match.
+  $('.sport_matches_desk').each((_, section) => {
+    const $section = $(section);
+    let currentCompetition = 'Compétition';
+    const compMap = new Map();
+
+    $section.children().each((__, child) => {
+      const $child = $(child);
+
+      if ($child.hasClass('league')) {
+        const name = $child.text().trim();
+        if (name) currentCompetition = name;
+        return;
+      }
+
+      if ($child.hasClass('football_desk') && $child.hasClass('desc_item')) {
+        const link = $child.find('a').first();
+        const href = link.attr('href') || '';
+        const dateRaw = link.find('.txt_date_time').text().replace(/\s+/g, ' ').trim();
+        const matchText = link.find('.matches').text().trim();
+        if (!dateRaw || !matchText || !href) return;
+
+        const teams = matchText.split(/\s+-\s+/).map(t => t.trim()).filter(Boolean);
+        const dateTime = parseDateTime(dateRaw);
+        // Le HTML ne distingue pas visuellement "en direct" de "à venir" dans
+        // le code source (l'indicateur "live" semble être animé côté client
+        // en JS/CSS selon l'heure). On déduit isLive du fait que l'heure de
+        // début est déjà passée — approximation raisonnable, pas une donnée
+        // exacte du site.
+        const isLive = dateTime ? new Date(dateTime).getTime() <= Date.now() : false;
+        const id = href.match(/-(\d+)$/)?.[1] || Math.random().toString(36).slice(2);
+        const matchUrl = href.startsWith('http') ? href : `${DZRI_BASE}${href}`;
+
+        if (!compMap.has(currentCompetition)) compMap.set(currentCompetition, []);
+        compMap.get(currentCompetition).push({
+          id,
           homeTeam: teams[0] || matchText,
           awayTeam: teams[1] || 'TBD',
-          dateTime: parseDateTime(dateText),
-          dateRaw: dateText,
-          matchUrl: matchPath.startsWith('http') ? matchPath : `${DZRI_BASE}${matchPath}`,
+          dateTime,
+          dateRaw,
+          matchUrl,
           isLive,
-          competition: compName
+          competition: currentCompetition,
         });
       }
     });
-    if (matches.length > 0) competitions.push({ name: compName, matches });
+
+    for (const [name, matches] of compMap) {
+      if (matches.length > 0) competitions.push({ name, matches });
+    }
   });
 
   return { competitions, sport, count: competitions.reduce((a, c) => a + c.matches.length, 0) };

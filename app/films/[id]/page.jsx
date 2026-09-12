@@ -2,7 +2,8 @@ import { getMovieDetails } from '@/lib/tmdb';
 import Link from 'next/link';
 
 export default async function MovieDetailsPage({ params }) {
-  const movie = await getMovieDetails(params.id);
+  const { id } = await params;
+  const movie = await getMovieDetails(id);
   const poster = movie.poster_path ? `https://image.tmdb.org/t/p/w780${movie.poster_path}` : null;
   return <main className="max-w-5xl mx-auto px-6 py-10">
     <Link href="/films" className="text-sm text-dim hover:text-gold">← Retour aux films</Link>

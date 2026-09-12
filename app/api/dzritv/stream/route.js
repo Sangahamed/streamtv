@@ -38,8 +38,13 @@ export async function GET(request) {
     });
 
     const scriptText = $('script').map((_, el) => $(el).html()).get().join(' ');
-    const m3u8Match = scriptText.match(/["']([^"']+\.m3u8[^"]*)["']/);
-    const mp4Match = scriptText.match(/["']([^"']+\.mp4[^"]*)["']/);
+    // Constaté sur une vraie page de match (11/09/2026) : le flux est injecté
+    // via `var videoSrc = '...m3u8?...';` dans un <script> inline. La regex
+    // doit stopper au VRAI guillemet fermant (simple OU double) : utiliser
+    // [^"]* au lieu de [^"']* faisait avaler toute la suite du script jusqu'à
+    // un guillemet bien plus loin, produisant une URL corrompue et injouable.
+    const m3u8Match = scriptText.match(/["']([^"']+\.m3u8[^"']*)["']/);
+    const mp4Match = scriptText.match(/["']([^"']+\.mp4[^"']*)["']/);
     if (m3u8Match && !sources.find(s => s.url.includes('.m3u8'))) sources.push({ type: 'hls', url: resolveUrl(m3u8Match[1]), quality: 'auto' });
     if (mp4Match && !sources.find(s => s.url.includes('.mp4'))) sources.push({ type: 'mp4', url: resolveUrl(mp4Match[1]), quality: 'auto' });
 

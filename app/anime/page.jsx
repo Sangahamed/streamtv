@@ -25,18 +25,27 @@ export default function AnimePage() {
   }
 
   return (
-    <main style={{ maxWidth:800, margin:'0 auto', padding:24 }}>
-      <h1 style={{ fontSize:24, fontWeight:500, marginBottom:16 }}>Anime</h1>
-      <div style={{ display:'flex', gap:8, marginBottom:20 }}>
-        <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Rechercher un anime..." style={{ flex:1, padding:'8px 12px', borderRadius:8, border:'1px solid var(--kimi-color-border)', background:'var(--kimi-color-surface)', color:'var(--kimi-color-text-primary)' }} />
-        <button onClick={search} style={{ padding:'8px 16px', borderRadius:8, border:'1px solid var(--kimi-color-border)', background:'var(--kimi-color-text-primary)', color:'var(--kimi-color-surface)', cursor:'pointer' }}>Rechercher</button>
+    <main className="max-w-3xl mx-auto px-6 py-6">
+      <h1 className="text-2xl font-semibold mb-4">Anime</h1>
+      <div className="flex gap-2 mb-5">
+        <input
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Rechercher un anime..."
+          className="flex-1 px-3 py-2 rounded-lg border border-border bg-card text-white"
+        />
+        <button onClick={search} className="px-4 py-2 rounded-lg border border-border bg-gold text-bg font-medium">Rechercher</button>
       </div>
 
       {results.length > 0 && (
-        <div style={{ marginBottom:20 }}>
-          <h2 style={{ fontSize:16, fontWeight:500, marginBottom:12 }}>Résultats</h2>
+        <div className="mb-5">
+          <h2 className="text-base font-medium mb-3">Résultats</h2>
           {results.map(r => (
-            <button key={r.url} onClick={() => loadEpisodes(r.url)} style={{ display:'block', width:'100%', textAlign:'left', padding:10, marginBottom:6, borderRadius:8, border:'1px solid var(--kimi-color-border)', background:'transparent', color:'var(--kimi-color-text-primary)', cursor:'pointer' }}>
+            <button
+              key={r.url}
+              onClick={() => loadEpisodes(r.url)}
+              className="block w-full text-left p-2.5 mb-1.5 rounded-lg border border-border bg-transparent text-white"
+            >
               {r.title}
             </button>
           ))}
@@ -45,17 +54,17 @@ export default function AnimePage() {
 
       {episodes.length > 0 && (
         <div>
-          <h2 style={{ fontSize:16, fontWeight:500, marginBottom:12 }}>Épisodes</h2>
+          <h2 className="text-base font-medium mb-3">Épisodes</h2>
           {episodes.map((ep, i) => (
-            <div key={i} style={{ marginBottom:16 }}>
-              <div style={{ fontSize:13, fontWeight:500, marginBottom:6 }}>Épisode {i + 1} — {ep.provider}</div>
+            <div key={i} className="mb-4">
+              <div className="text-sm font-medium mb-1.5">Épisode {i + 1} — {ep.provider}</div>
               <AnimePlayer embedUrl={ep.embed} title={`Épisode ${i + 1}`} />
             </div>
           ))}
         </div>
       )}
 
-      {loading && <div style={{ textAlign:'center', padding:20, color:'var(--kimi-color-text-quaternary)' }}>Chargement...</div>}
+      {loading && <div className="text-center p-5 text-dim/60">Chargement...</div>}
     </main>
   );
 }

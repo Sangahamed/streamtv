@@ -1,8 +1,8 @@
 import Link from 'next/link';
 import { getLiveTvData } from '@/lib/iptv';
 import { getMovies } from '@/lib/tmdb';
-import ChannelCard from '@/components/ChannelCard';
 import MovieCard from '@/components/MovieCard';
+import HomeChannelsPreview from '@/components/HomeChannelsPreview';
 
 export default async function HomePage() {
   const tvPromise = getLiveTvData().catch(() => ({channels:[],countries:[],categories:[],sportCount:0}));
@@ -18,7 +18,7 @@ export default async function HomePage() {
       <div className="flex gap-3 mt-6 flex-wrap"><Link href="/tv" className="bg-gold text-bg font-semibold px-5 py-3 rounded-lg">Explorer la TV</Link><Link href="/dzritv" className="border border-border px-5 py-3 rounded-lg text-sm">Voir le sport</Link></div>
     </section>
     <SectionTitle title="📺 En direct" href="/tv"/>
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5 mb-10">{channels.map((c,i)=><ChannelCard key={c.id} channel={c} index={i+1} />)}</div>
+    <HomeChannelsPreview channels={channels} />
     {movies.results?.length>0 && <><SectionTitle title="🎬 Films populaires" href="/films"/><div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3.5"><>{movies.results.slice(0,6).map(m=><MovieCard key={m.id} movie={m}/>)}</></div></>}
   </main>;
 }
