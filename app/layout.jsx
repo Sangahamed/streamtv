@@ -1,4 +1,5 @@
 import './globals.css';
+import NavBar from '@/components/NavBar';
 
 export const metadata = {
   title: 'StreamTV — TV Live, Sport, Anime & Films',
@@ -8,6 +9,7 @@ export const metadata = {
 
 export const viewport = {
   themeColor: '#0d1b1e',
+  colorScheme: 'dark',
 };
 
 export default function RootLayout({ children }) {
@@ -18,18 +20,16 @@ export default function RootLayout({ children }) {
         <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet" />
       </head>
       <body className="bg-bg text-white font-body min-h-screen">
-        <nav className="sticky top-0 z-40 border-b border-border bg-bg/95 backdrop-blur px-6 py-3">
-          <div className="max-w-6xl mx-auto flex items-center gap-5">
-            <a href="/" className="font-display text-2xl tracking-wide">STREAM<span className="text-gold">TV</span></a>
-            <a href="/tv" className="text-sm text-dim hover:text-white">TV</a>
-            <a href="/dzritv" className="text-sm text-dim hover:text-white">Sport</a>
-            <a href="/anime" className="text-sm text-dim hover:text-white">Anime</a>
-            <a href="/films" className="text-sm text-dim hover:text-white">Films</a>
-            <a href="/favoris" className="ml-auto text-sm text-dim hover:text-gold">♥ Favoris</a>
-          </div>
-        </nav>
+        <NavBar />
         {children}
-        <script dangerouslySetInnerHTML={{__html:`if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(()=>{});}`}} />
+        {/* Le service worker met en cache le JS en "cache-first" : en dev, le
+            bundle change à chaque modif mais l'ancien reste servi, ce qui
+            désynchronise le JS hydraté du HTML rendu côté serveur et casse
+            silencieusement tous les événements (clics, saisie) de la page.
+            On ne l'enregistre donc qu'en production. */}
+        {process.env.NODE_ENV === 'production' && (
+          <script dangerouslySetInnerHTML={{__html:`if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(()=>{});}`}} />
+        )}
       </body>
     </html>
   );

@@ -4,6 +4,9 @@ import { getMovies } from '@/lib/tmdb';
 import MovieCard from '@/components/MovieCard';
 import HomeChannelsPreview from '@/components/HomeChannelsPreview';
 
+// Voir app/tv/page.jsx : données mises en cache par lib/cache.js.
+export const dynamic = 'force-dynamic';
+
 export default async function HomePage() {
   const tvPromise = getLiveTvData().catch(() => ({channels:[],countries:[],categories:[],sportCount:0}));
   const moviePromise = process.env.TMDB_API_KEY ? getMovies('popular',1).catch(()=>({results:[]})) : Promise.resolve({results:[]});

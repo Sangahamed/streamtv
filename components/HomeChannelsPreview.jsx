@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import ChannelCard from './ChannelCard';
 import Player from './Player';
 import { useFavorites } from '@/hooks/useFavorites';
@@ -12,6 +12,7 @@ import { useFavorites } from '@/hooks/useFavorites';
 export default function HomeChannelsPreview({ channels }) {
   const [active, setActive] = useState(null);
   const { toggle, isFav } = useFavorites();
+  const closePlayer = useCallback(() => setActive(null), []);
 
   return (
     <>
@@ -21,13 +22,13 @@ export default function HomeChannelsPreview({ channels }) {
             key={c.id}
             channel={c}
             index={i + 1}
-            onSelect={() => setActive(c)}
+            onSelect={setActive}
             isFavorite={isFav(c.id)}
             onFavorite={toggle}
           />
         ))}
       </div>
-      {active && <Player channel={active} onClose={() => setActive(null)} />}
+      {active && <Player channel={active} onClose={closePlayer} />}
     </>
   );
 }
