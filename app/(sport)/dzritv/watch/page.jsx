@@ -9,21 +9,30 @@ export default function DzriTVWatchPage() {
   const [streamData, setStreamData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  // Incrémenté par « Réessayer » : redemande un lien neuf, sans le cache.
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!matchUrl) return;
+    // Seule la dernière requête compte : une réponse plus ancienne porterait
+    // un lien signé déjà remplacé.
+    let stale = false;
     async function fetchStream() {
       try {
-        const res = await fetch(`/api/dzritv/stream?url=${encodeURIComponent(matchUrl)}`);
+        const fresh = attempt > 0 ? '&fresh=1' : '';
+        const res = await fetch(`/api/dzritv/stream?url=${encodeURIComponent(matchUrl)}${fresh}`);
         const data = await res.json();
+        if (stale) return;
         if (data.error) throw new Error(data.error);
-        if (data.sources.length === 0) throw new Error('Aucun flux trouvé');
+        if (data.sources.length === 0) throw new Error('Aucun flux trouvé (match terminé ou pas encore commencé)');
+        setError(null);
         setStreamData(data);
-      } catch (err) { setError(err.message); }
-      finally { setLoading(false); }
+      } catch (err) { if (!stale) setError(err.message); }
+      finally { if (!stale) setLoading(false); }
     }
     fetchStream();
-  }, [matchUrl]);
+    return () => { stale = true; };
+  }, [matchUrl, attempt]);
 
   if (!matchUrl) return <div className="p-10 text-center text-dim">Aucun match sélectionné</div>;
   if (loading) return <div className="max-w-3xl mx-auto p-10 text-center text-dim">Extraction du flux...</div>;
@@ -45,7 +54,7 @@ export default function DzriTVWatchPage() {
         <a href="/dzritv" className="text-sm text-dim">← Retour aux matchs</a>
       </div>
       <div className="w-full aspect-video rounded-xl overflow-hidden border border-border bg-black">
-        <UniversalPlayer source={bestSource.url} type={bestSource.type === 'hls' ? 'hls' : 'iframe'} title="Match en direct" />
+        <UniversalPlayer key={`${attempt}:${bestSource.url}`} source={bestSource.url} type={bestSource.type === 'hls' ? 'hls' : 'iframe'} title="Match en direct" onRetry={() => setAttempt(a => a + 1)} />
       </div>
       {streamData.sources.length > 1 && (
         <div className="mt-4">

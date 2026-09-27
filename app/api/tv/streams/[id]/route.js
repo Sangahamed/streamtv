@@ -1,6 +1,7 @@
 import { getChannelStreams, isAdultChannelId } from '@/lib/iptv';
 import { checkStreams } from '@/lib/stream-check';
-import { proxyUrl } from '@/lib/stream-proxy';
+import { proxyUrl, signedLink } from '@/lib/stream-proxy';
+import { transcodeEnabled } from '@/lib/hevc-transcode';
 
 // Flux d'une chaîne, chargés par le lecteur à l'ouverture : évite d'embarquer
 // les ~15 000 URL de flux dans les pages /tv et d'accueil. Chaque source est
@@ -13,11 +14,14 @@ export async function GET(_request, { params }) {
     // Chaque flux vidéo reçoit un lien de relais serveur, utilisé par le
     // lecteur quand la lecture directe est impossible. Les en-têtes exigés par
     // le diffuseur restent dans le lien signé, pas dans la réponse.
+    // Conversion HEVC → H.264 proposée au lecteur quand ce serveur sait la faire.
+    const transcode = transcodeEnabled();
     const streams = checked.map(({ referrer, userAgent, ...s }) => {
       if (s.kind === 'youtube' || s.kind === 'twitch') return s;
       return {
         ...s,
         proxy: proxyUrl(s.url, { referrer, userAgent }),
+        ...(transcode ? { transcode: signedLink('/api/tv/hevc', s.url, { referrer, userAgent }) } : {}),
         ...(referrer || userAgent ? { needsProxy: true } : {}),
       };
     });

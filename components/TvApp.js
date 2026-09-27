@@ -137,6 +137,7 @@ export default function TvApp({ channels: liveChannels, countries: liveCountries
       <label className="flex items-center gap-2 text-xs text-dim font-mono cursor-pointer"><input type="checkbox" checked={includeSport} onChange={e=>setIncludeSport(e.target.checked)} className="accent-[#e8b04b]"/> Inclure le sport ({sportCount})</label>
       <label className="flex items-center gap-2 text-xs text-dim font-mono cursor-pointer"><input type="checkbox" checked={showOffline} onChange={e=>setShowOffline(e.target.checked)} className="accent-[#e8b04b]"/> Afficher les chaînes sans flux ({(offline?.channels.length??offlineCount).toLocaleString('fr-FR')}){offlineLoading&&' · chargement…'}</label>
       {adultLoading&&<span className="text-xs text-dim font-mono">Chargement…</span>}
+      {adultMode&&adult&&<a href="/tv/adulte" className="text-xs text-gold font-mono underline">Liste des chaînes 18+ avec liens →</a>}
       {offlineError&&<span className="text-xs text-red font-mono">Impossible de charger les chaînes sans flux. Réessayez.</span>}
       {adultError&&<span className="text-xs text-red font-mono">Impossible de charger les chaînes 18+.</span>}
     </div>
@@ -158,7 +159,7 @@ export default function TvApp({ channels: liveChannels, countries: liveCountries
     {ageGate&&<AgeGate onConfirm={confirmAge} onCancel={()=>setAgeGate(false)}/>}
   </div>;
 }
-function AgeGate({onConfirm,onCancel}){
+export function AgeGate({onConfirm,onCancel}){
   useEffect(()=>{
     const onKey=e=>{ if(e.key==='Escape') onCancel(); };
     document.addEventListener('keydown',onKey);

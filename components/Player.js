@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { checkStreamHealth, isMixedContent } from '@/lib/health';
 import { useFavorites } from '@/hooks/useFavorites';
+import HevcPlayer from './HevcPlayer';
 
 // Chien de garde : on ne passe à la source suivante qu'après ce délai SANS
 // AUCUN progrès (playlist, segment, métadonnées). Un flux lent mais vivant
@@ -34,6 +35,9 @@ export default function Player({ channel, onClose }) {
   const [status, setStatus] = useState('loading'); // loading | playing | unavailable | unsupported
   const [autoMuted, setAutoMuted] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  // Sources où le son passe mais pas l'image : vidéo dans un format que ce
+  // navigateur ne décode pas (HEVC/H.265 le plus souvent).
+  const [noVideo, setNoVideo] = useState(0);
   const { toggle, isFav } = useFavorites();
   const favorite = isFav(channel.id);
 
@@ -61,6 +65,7 @@ export default function Player({ channel, onClose }) {
     setFetchError(false);
     setStreamIndex(0);
     setStatus('loading');
+    setNoVideo(0);
 
     fetch(`/api/tv/streams/${encodeURIComponent(channel.id)}`, { signal: controller.signal })
       .then((res) => {
@@ -92,14 +97,31 @@ export default function Player({ channel, onClose }) {
     setRetrying(false);
   }, [streams]);
 
+  // Sources dont l'image ne se décode pas ici : inutile de les retenter.
+  const noVideoRef = useRef(new Set());
+  useEffect(() => { noVideoRef.current = new Set(); }, [streams]);
+
+  // Dernier recours : aucune source n'affiche d'image mais certaines envoient
+  // du son (HEVC non décodé) → décodeur HEVC logiciel sur la première d'entre
+  // elles. hevc = { stream, state: 'loading' | 'playing' | 'error' }.
+  const [hevc, setHevc] = useState(null);
+  useEffect(() => { setHevc(null); }, [streams]);
+  useEffect(() => {
+    if (status !== 'unavailable' || hevc || !streams) return;
+    const stream = streams.find((s) => noVideoRef.current.has(s.url));
+    if (stream) setHevc({ stream, state: 'loading' });
+  }, [status, streams, hevc]);
+
   const goToNextSource = useCallback(() => {
     setStreamIndex((i) => {
-      if (streams && i + 1 < streams.length) return i + 1;
-      if (streams?.length && roundRef.current < 1) {
+      const usable = (j) => !noVideoRef.current.has(streams[j].url);
+      for (let j = i + 1; streams && j < streams.length; j++) if (usable(j)) return j;
+      const first = streams ? streams.findIndex((_, j) => usable(j)) : -1;
+      if (first !== -1 && roundRef.current < 1) {
         roundRef.current += 1;
         setRetrying(true);
         setAttempt((a) => a + 1);
-        return 0;
+        return first;
       }
       setStatus('unavailable');
       return i;
@@ -126,6 +148,7 @@ export default function Player({ channel, onClose }) {
     let hls = null;
     let started = false;
     let watchdog = null;
+    let noVideoTimer = null;
     setStatus('loading');
     setAutoMuted(false);
     const canNative = video.canPlayType(HLS_MIME) !== '';
@@ -137,11 +160,13 @@ export default function Player({ channel, onClose }) {
     );
     const src = () => (viaProxy ? stream.proxy : stream.url);
 
-    const fail = (reason) => {
+    const fail = (reason, { final = false } = {}) => {
       if (cancelled || started) return;
+      clearTimeout(noVideoTimer);
       // Erreur en lecture directe : on retente une fois via le relais, sauf si
-      // le serveur a déjà constaté que la source est morte.
-      if (!viaProxy && stream.proxy && stream.alive !== false && reason !== 'aucun progrès') {
+      // le serveur a déjà constaté que la source est morte, ou si le relais
+      // n'y changerait rien (format vidéo non décodable).
+      if (!final && !viaProxy && stream.proxy && stream.alive !== false && reason !== 'aucun progrès') {
         console.warn(`Lecture directe impossible (${reason}), passage par le relais : ${stream.url}`);
         viaProxy = true;
         teardown();
@@ -167,6 +192,21 @@ export default function Player({ channel, onClose }) {
     };
     const onStarted = () => {
       if (cancelled || started) return;
+      // Son sans image : Chrome lit l'AAC mais pas une vidéo HEVC, et la
+      // lecture « démarre » sur un écran noir. On laisse 4 s à l'image pour
+      // arriver, puis on passe à la source suivante.
+      if (video.videoWidth === 0) {
+        if (!noVideoTimer) {
+          noVideoTimer = setTimeout(() => {
+            if (cancelled || started || video.videoWidth > 0) return;
+            noVideoRef.current.add(stream.url);
+            setNoVideo((n) => n + 1);
+            fail('son sans image (format vidéo non décodé)', { final: true });
+          }, 4000);
+        }
+        return;
+      }
+      clearTimeout(noVideoTimer);
       started = true;
       clearTimeout(watchdog);
       setStatus('playing');
@@ -197,6 +237,15 @@ export default function Player({ channel, onClose }) {
     };
     const onNativeError = () => fail('erreur du lecteur natif');
 
+    // Filet de sécurité : le temps de lecture avance (le son joue) mais
+    // aucune image n'arrive, sans qu'aucun événement ne l'ait signalé.
+    const soundOnly = setInterval(() => {
+      if (started || cancelled || video.videoWidth > 0 || video.currentTime < 3) return;
+      clearInterval(soundOnly);
+      noVideoRef.current.add(stream.url);
+      setNoVideo((n) => n + 1);
+      fail('son sans image (format vidéo non décodé)', { final: true });
+    }, 1000);
     video.addEventListener('loadeddata', onStarted);
     video.addEventListener('playing', onStarted);
     video.addEventListener('progress', bump);
@@ -226,6 +275,16 @@ export default function Player({ channel, onClose }) {
         let mediaRecoveries = 0;
         let fragments = 0;
         hls = new Hls(HLS_CONFIG);
+        // Codec vidéo connu dès l'analyse du premier segment : un HEVC que le
+        // navigateur ne sait pas décoder est écarté tout de suite.
+        hls.on(Hls.Events.BUFFER_CODECS, (_evt, data) => {
+          const codec = data.video?.codec || '';
+          if (/^(hvc1|hev1)/i.test(codec) && !window.MediaSource?.isTypeSupported(`video/mp4; codecs="${codec}"`)) {
+            noVideoRef.current.add(stream.url);
+            setNoVideo((n) => n + 1);
+            fail(`codec vidéo ${codec} non décodable ici`, { final: true });
+          }
+        });
         hls.on(Hls.Events.MANIFEST_LOADED, bump);
         hls.on(Hls.Events.LEVEL_LOADED, bump);
         hls.on(Hls.Events.FRAG_LOADED, () => {
@@ -233,6 +292,13 @@ export default function Player({ channel, onClose }) {
           bump();
         });
         hls.on(Hls.Events.ERROR, (_evt, data) => {
+          // Codec vidéo refusé par le navigateur (HEVC sans décodeur) : ni
+          // une relance ni le relais n'y changeront rien.
+          if (/codec/i.test(data.details || '')) {
+            noVideoRef.current.add(stream.url);
+            setNoVideo((n) => n + 1);
+            return fail(`codec non pris en charge (${data.details})`, { final: true });
+          }
           if (!data.fatal) return;
           if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
             // Rien chargé du tout : souvent un blocage CORS → lecteur natif,
@@ -273,6 +339,8 @@ export default function Player({ channel, onClose }) {
     return () => {
       cancelled = true;
       clearTimeout(watchdog);
+      clearTimeout(noVideoTimer);
+      clearInterval(soundOnly);
       video.removeEventListener('loadeddata', onStarted);
       video.removeEventListener('playing', onStarted);
       video.removeEventListener('progress', bump);
@@ -286,6 +354,7 @@ export default function Player({ channel, onClose }) {
   }, [channel.id, channel.adult, streams, streamIndex, attempt, goToNextSource]);
 
   function selectSource(i) {
+    setHevc(null);
     setStreamIndex(i);
     setAttempt((a) => a + 1);
   }
@@ -339,7 +408,26 @@ export default function Player({ channel, onClose }) {
         </div>
 
         <div className="relative bg-black">
-          <video ref={videoRef} controls playsInline className={`w-full aspect-video ${currentEmbed ? 'hidden' : 'block'}`} />
+          <video ref={videoRef} controls playsInline className={`w-full aspect-video ${currentEmbed || hevc ? 'hidden' : 'block'}`} />
+          {hevc && hevc.state !== 'error' && (
+            <>
+              {/* Même origine via le relais : le décodeur n'est pas soumis au CORS. */}
+              <HevcPlayer
+                src={hevc.stream.proxy || hevc.stream.url}
+                onReady={() => setHevc((h) => h && { ...h, state: 'playing' })}
+                onError={(reason) => {
+                  console.warn(`Décodeur HEVC : ${reason}`);
+                  setHevc((h) => h && { ...h, state: 'error' });
+                }}
+              />
+              {hevc.state === 'loading' && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 pointer-events-none">
+                  <span className="h-9 w-9 rounded-full border-2 border-gold/30 border-t-gold animate-spin" />
+                  <span className="font-mono text-[11px] text-dim tracking-wide">VIDÉO HEVC · DÉCODAGE LOGICIEL…</span>
+                </div>
+              )}
+            </>
+          )}
           {currentEmbed && (
             <iframe
               key={currentEmbed}
@@ -381,25 +469,37 @@ export default function Player({ channel, onClose }) {
               <button onClick={() => setReload((r) => r + 1)} className="text-gold underline">Réessayer</button>
             </p>
           )}
-          {status === 'unavailable' && !fetchError && streams && (
+          {hevc?.state === 'playing' && (
+            <p>
+              Vidéo HEVC lue par le décodeur logiciel : elle peut saccader sur un ordinateur peu puissant.{' '}
+              <a href={`/api/tv/streams/${encodeURIComponent(channel.id)}/m3u`} download className="text-gold underline">
+                Ouvrir dans VLC (.m3u)
+              </a>
+            </p>
+          )}
+          {status === 'unavailable' && !fetchError && streams && (!hevc || hevc.state === 'error') && (
             <p className="text-red">
               {streams.length === 0
                 ? skippedInsecure > 0
                   ? 'Cette chaîne ne propose que des flux HTTP, bloqués par le navigateur sur un site HTTPS.'
                   : 'Aucun flux lisible dans un navigateur pour cette chaîne.'
-                : corsBlocked
-                  ? 'Le diffuseur interdit la lecture de ce flux depuis un autre site : il se lit dans VLC ou via le lien direct.'
-                  : 'Aucune source ne répond pour le moment.'}{' '}
+                : noVideo > 0
+                  ? 'Le son passe mais pas l’image : la vidéo est dans un format (HEVC / H.265) que ce navigateur ne sait pas décoder. Elle se lit dans VLC.'
+                  : corsBlocked
+                    ? 'Le diffuseur interdit la lecture de ce flux depuis un autre site : il se lit dans VLC.'
+                    : 'Aucune source ne répond pour le moment.'}{' '}
               {streams.length > 0 && (
-                <button onClick={() => { roundRef.current = 0; setRetrying(false); selectSource(0); }} className="text-gold underline">Réessayer</button>
+                <button onClick={() => { roundRef.current = 0; setRetrying(false); setNoVideo(0); noVideoRef.current = new Set(); selectSource(0); }} className="text-gold underline">Réessayer</button>
               )}
-              {currentStream && (
+              {streams.length > 0 && (
                 <>
                   {' · '}
-                  <a href={currentStream.url} target="_blank" rel="noopener noreferrer" className="text-gold underline">
-                    Ouvrir le lien brut
-                  </a>{' '}
-                  (ex. dans VLC)
+                  {/* Fichier .m3u téléchargé : Windows l'ouvre avec VLC (ou le
+                      lecteur associé) au lieu du navigateur, qui ne lirait
+                      que le son d'un flux HEVC. */}
+                  <a href={`/api/tv/streams/${encodeURIComponent(channel.id)}/m3u`} download className="text-gold underline">
+                    Ouvrir dans VLC (.m3u)
+                  </a>
                 </>
               )}
             </p>
