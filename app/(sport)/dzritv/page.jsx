@@ -1,6 +1,9 @@
 import Link from 'next/link';
 import DzriTvView from '@/components/DzriTvView';
 import { SPORT_SLUG_MAP } from '@/lib/dzritv-sports';
+import { getDzriMatches } from '@/lib/dzritv-matches';
+
+export const dynamic = 'force-dynamic';
 
 export const metadata = {
   title: 'Matchs en direct — DZriTV',
@@ -8,15 +11,11 @@ export const metadata = {
 };
 
 export default async function DzriTVPage({ searchParams }) {
-  const baseUrl = process.env.NEXT_PUBLIC_URL || 'http://localhost:3000';
   const params = await searchParams;
   const sport = params?.sport || 'football';
   const view = params?.view === 'live' ? 'live' : 'cards';
 
-  const res = await fetch(`${baseUrl}/api/dzritv/matches?sport=${sport}`, {
-    next: { revalidate: 300 }
-  });
-  const data = await res.json();
+  const data = await getDzriMatches(sport);
   const competitions = data.competitions || [];
   const iframeSrc = `https://dzritv.com/sport/${SPORT_SLUG_MAP[sport] || sport}`;
 
