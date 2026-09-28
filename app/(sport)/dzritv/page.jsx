@@ -1,6 +1,4 @@
 import Link from 'next/link';
-import DzriTvView from '@/components/DzriTvView';
-import { SPORT_SLUG_MAP } from '@/lib/dzritv-sports';
 import { getDzriMatches } from '@/lib/dzritv-matches';
 
 export const dynamic = 'force-dynamic';
@@ -13,17 +11,8 @@ export const metadata = {
 export default async function DzriTVPage({ searchParams }) {
   const params = await searchParams;
   const sport = params?.sport || 'football';
-  const view = params?.view === 'live' ? 'live' : 'cards';
-
   const data = await getDzriMatches(sport);
   const competitions = data.competitions || [];
-  const iframeSrc = `https://dzritv.com/sport/${SPORT_SLUG_MAP[sport] || sport}`;
-
-  // La vue "live" (iframe) doit occuper tout l'espace disponible en largeur
-  // et en hauteur, quel que soit l'appareil : pas de conteneur max-w-4xl ici,
-  // et une hauteur calculée par rapport au viewport (moins la nav du haut)
-  // plutôt qu'une valeur fixe. 100dvh (au lieu de 100vh) évite les problèmes
-  // de barre d'adresse mobile qui apparaît/disparaît.
   return (
     <div className="flex flex-col" style={{ height: 'calc(100dvh - 57px)' }}>
       <div className="max-w-4xl w-full mx-auto px-4 pt-6 shrink-0">
@@ -34,27 +23,13 @@ export default async function DzriTVPage({ searchParams }) {
               Source : {data.source || 'inconnue'} {data.fallback && '(fallback)'} {data.cached && '— cache'}
             </div>
           </div>
-          <div className="flex gap-2 text-xs">
-            <Link
-              href={`/dzritv?sport=${sport}&view=cards`}
-              className={`px-3 py-1.5 rounded-lg border border-border font-medium ${view === 'cards' ? 'bg-gold text-bg border-gold' : 'text-dim'}`}
-            >
-              Vue StreamTV
-            </Link>
-            <Link
-              href={`/dzritv?sport=${sport}&view=live`}
-              className={`px-3 py-1.5 rounded-lg border border-border font-medium ${view === 'live' ? 'bg-gold text-bg border-gold' : 'text-dim'}`}
-            >
-              Vue intégrée (site officiel)
-            </Link>
-          </div>
         </div>
 
         <div className="flex gap-2 mb-4 flex-wrap">
           {['football', 'basketball', 'tennis', 'volleyball', 'ice-hockey'].map(s => (
             <Link
               key={s}
-              href={`/dzritv?sport=${s}&view=${view}`}
+              href={`/dzritv?sport=${s}`}
               className={`px-3.5 py-1.5 rounded-lg border border-border text-xs font-medium capitalize ${sport === s ? 'bg-white text-bg' : 'text-dim'}`}
             >
               {s.replace('-', ' ')}
@@ -63,12 +38,7 @@ export default async function DzriTVPage({ searchParams }) {
         </div>
       </div>
 
-      {view === 'live' ? (
-        <div className="flex-1 min-h-0 w-full px-4 pb-4">
-          <DzriTvView src={iframeSrc} />
-        </div>
-      ) : (
-        <div className="max-w-4xl w-full mx-auto px-4 pb-6 flex-1 min-h-0 overflow-y-auto">
+      <div className="max-w-4xl w-full mx-auto px-4 pb-6 flex-1 min-h-0 overflow-y-auto">
           {competitions.length === 0 && (
             <div className="text-center py-16 text-dim">
               <div className="text-sm mb-2">Aucun match trouvé</div>
@@ -124,7 +94,6 @@ export default async function DzriTVPage({ searchParams }) {
             </div>
           ))}
         </div>
-      )}
     </div>
   );
 }
